@@ -1,0 +1,16 @@
+---
+title: "WRITE_UP"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#####WRITE-UP
+```
+DATA ANALYSIS:
+We can thoerize that the release of the Scorecard did not significantly shift interest from colleges that predominantly grant bachelor's degrees. Atleast not for graduates who earn lower incomes to where graduates earn higher incomes. The coefficients in normalized index values show the difference when comparing high-income colleges to low-income colleges. We see the high-income colleges have a higher average. When comparing the differences in normalized monthly index value changes by graduate income brackets we can see that overall there were more negative changes since the Scorecard was released but the relative change between high and low income brackets before and after the Scorecard was released is nearly zero. We also saw a decrease in interest from low-income colleges after the Scorecard was released using fixed effect on our income brackets and the time frame. Our regression model shows changes in interest in pre and post release of scorecard for different categories. They also show the earning levels for hte students who graduate from those colleges. Looking at the regression lines for high and low income brackets over time we can see there was a sharp decline in the normalized sum of monthly index value by school when the Scorecard was released but the decline for both high and low income brackets is about equal. In conclusion, median earnings actually went down after the college scorecard was released and my belief is because there was more information that people had access to which probably resulted in some college's losing potential students, decreasing the median earnings at a statistically significant level. This makes sense because people want to do the research before accepting going into a college as it is a big investment. It was interesting to see that there was a difference in the type of colleges that people would search as that would yield higher earnings.
+
+```
+

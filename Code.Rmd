@@ -1,0 +1,151 @@
+---
+title: "Data Exploration Assignment"
+author: "Mohammed Ismail"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+####RESEARCH QUESTION:  
+####The College Scorecard was released at the start of September 2015.  Among colleges that predominantly grant bachelors degrees, did the release of the Scorecard shift student interest to high-earnings colleges relative to low-earnings ones (as proxied by Google searches for keywords associated with those colleges)?
+
+###Libraries
+
+
+```{r}
+library(tidyverse)
+library(readr)
+library(readxl)
+library(fixest)
+library(purrr)
+```
+
+
+##Pulling the data 
+```{r}
+id_name_link <- read_csv("../Rawdata/id_name_link.csv")
+Scorecard <- read_csv("../Rawdata/Most+Recent+Cohorts+(Scorecard+Elements).csv")
+Trends_files <- list.files(path = 'Rawdata', pattern = 'trends_up_to_',full.names = TRUE)
+print(Trends_files)
+Trends_map=map_df(Trends_files,~read_csv(.))
+print(Trends_map)
+Trends <- rbind(Trends_map)
+summary(Trends)
+```
+
+##Initial cleaning to remove NULLS
+```{r}
+Trends <- Trends %>% 
+  na.omit()
+summary(Trends)
+```
+
+##Playing with Data and exploring
+##Ignore(Ended up not using any of it)
+```{r}
+#id_Scorecard <- merge(x = id_name_link, y = Scorecard, by = c('UNITID', 'OPEID'), all.x = TRUE)
+#scorecard_all <- merge(x = ID_Scorecard, y = trends, by = 'schname', all.x = TRUE)
+#scorecard_all <- scorecard_all %>% select(-INSTNM)
+#scorecard_all <- scorecard_all %>% na.omit()
+#Data_To_Play_With <- scorecard_all %>%rename(med_earn = 'md_earn_wne_p10-REPORTED-EARNINGS') %>%filter(PREDDEG == 3) %>%
+#  filter(med_earn != 'NULL') %>%filter(med_earn != 'PrivacySuppressed') %>%mutate(med_earn = as.numeric(med_earn))
+#Data_To_Play_With <- Data_To_Play_With %>% select('UNITID', 'OPEID', 'schname', 'PREDDEG', 'keyword', 'monthorweek', 'keynum', 'index',
+#        'med_earn', 'CONTROL')
+#median_earnings <- median(Data_To_Play_With$med_earn)
+##The data has a median of 41,800 which could be used to filter the high and low earnings.
+```
+
+##Separating by month and year to fit format
+```{r}
+Trends_month_or_week <- Trends %>%mutate(Y = substr(monthorweek,1,4)) %>%mutate(M = substr(monthorweek,6,7)) %>%
+  mutate(MM_YYYY = paste0(M, sep = '-', Y)) %>%select(1,2,6,9)
+
+
+Trends_month_or_week <- Trends_month_or_week %>% group_by(schid, schname, MM_YYYY) %>% summarise(Ind_sum = sum(index))
+```
+
+##Removing duplicate names
+```{r}
+unique_schname <- id_name_link %>% group_by(schname) %>% filter(n() == 1)
+
+unique_schname <- unique_schname %>% mutate(merge_col = paste0(unitid, sep = ':', opeid))
+
+Scorecard <- Scorecard %>% mutate(merge_col = paste0(UNITID, sep = ':', OPEID))
+```
+
+##Merging the variables and filtering for schools for median income
+```{r}
+score_schname <- merge(Scorecard, unique_schname, by = "merge_col", all = TRUE)
+
+score_schname_red <- score_schname %>% select(126,5,122,11) %>% filter(PREDDEG == 3) %>% 
+  filter(`md_earn_wne_p10-REPORTED-EARNINGS` != 'NULL' & `md_earn_wne_p10-REPORTED-EARNINGS` != 'PrivacySuppressed')
+
+score_schname_red$md_income <- as.numeric(score_schname_red$`md_earn_wne_p10-REPORTED-EARNINGS`)
+```
+
+##Scorecard income is grouped based if less than 35000 to LOW
+##and if above 75000 to HIGH
+##between the values to MID.
+```{r}
+score_schname_red <- score_schname_red %>% mutate(Income_Bracket = case_when(md_income < 35000 ~ 'Low',md_income > 75000 ~ 'High',
+                                                                             TRUE ~ 'Mid')) %>% select(1,2,5,6)
+```
+
+
+##Meriging Trend with filtered data
+##Setting variables for if pre or post scorecard
+```{r}
+final_merge <- merge(Trends_month_or_week, score_schname_red, by.x = "schname", by.y = "schname", all.x = TRUE)
+final_df <- final_merge %>% na.omit()
+final_df$MM_YYYY <- as.Date(paste0(substr(final_df$MM_YYYY,1,2), sep = '/', '01', sep = '/', substr(final_df$MM_YYYY,4,7)), format = '%m/%d/%Y')
+final_df <- final_df %>% mutate(norm_ind = (Ind_sum - mean(Ind_sum))/sd(Ind_sum))
+final_df <- final_df %>% mutate(Timing = case_when(MM_YYYY < '2015-09-01' ~ 'Pre', MM_YYYY >= '2015-09-01'~ 'Post')) %>% 
+  mutate(High = case_when(Income_Bracket == 'High' ~ 1, TRUE ~ 0)) %>% 
+  mutate(Mid = case_when(Income_Bracket == 'Mid' ~ 1, TRUE ~ 0)) %>% 
+  mutate(Low = case_when(Income_Bracket == 'Low' ~ 1, TRUE ~ 0)) %>% 
+  mutate(Pre = case_when(MM_YYYY < '2015-09-01' ~ 1, TRUE ~ 0)) %>% 
+  mutate(Post = case_when(MM_YYYY > '2015-09-01' ~ 1, TRUE ~ 0))
+```
+
+##Filtering out pre and post dates.
+```{r}
+final_df_pre_sc <- final_df %>% filter(MM_YYYY < '2015-09-01')
+final_df_post_sc <- final_df %>% filter(MM_YYYY > '2015-09-01')
+```
+
+##Data regression
+```{r}
+m1 <- feols(norm_ind ~ Income_Bracket + Timing + Income_Bracket*Timing, data = final_df %>% filter(Income_Bracket != 'Mid'))
+etable(m1)
+
+m2 <- feols(norm_ind ~ Current_Treatment | Income_Bracket + Timing, data = final_df %>% filter(Income_Bracket != 'Mid') %>% mutate(Current_Treatment = Income_Bracket == 'High' & Timing == 'Post'))
+etable(m2)
+```
+
+##Final ANALYSIS
+```{r}
+did <- final_df %>% filter(Income_Bracket != 'Mid') %>% group_by(Income_Bracket, Timing) %>% summarise(mean = mean(norm_ind))
+
+did_effect <- (did$mean[did$Income_Bracket == 'High' & did$Timing == 'Post'] - did$mean[did$Income_Bracket == 'High' & did$Timing == 'Pre']) - (did$mean[did$Income_Bracket == 'Low' & did$Timing == 'Post'] - did$mean[did$Income_Bracket == 'Low' & did$Timing == 'Pre'])
+
+round(did_effect, 4)
+```
+
+
+##Comparing for pre and post scorecard
+```{r}
+#Box plot
+bp<-ggplot(final_df %>% filter(Income_Bracket != 'Mid'), aes(y = norm_ind, x = Income_Bracket, color = Timing)) + geom_boxplot()
+bp + scale_fill_manual(breaks = c("2", "1", "0.5"), 
+                       values=c("red", "blue", "green"))
+
+
+#Scatter plot
+sp<-ggplot(final_df %>% filter(Income_Bracket != 'Mid'), aes(y = norm_ind, x = MM_YYYY, color = Income_Bracket, shape = Timing))+geom_smooth(method = 'lm')
+sp + scale_color_manual(breaks = c("8", "6", "4"),
+                        values=c("red", "blue", "green"))
+```
